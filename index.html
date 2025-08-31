@@ -438,9 +438,10 @@
                 (gltf) => {
                     model = gltf.scene;
                     
-                    // Scale and position the model
-                    model.scale.setScalar(2);
-                    model.position.set(0, -1, 0);
+                    // Position and scale the model properly
+                    model.scale.setScalar(1.5); // Reduced scale
+                    model.position.set(0, -2.5, 0); // Moved down significantly
+                    model.rotation.y = 0; // Face forward
                     
                     // Enhance materials
                     model.traverse((child) => {
@@ -455,9 +456,10 @@
                     
                     scene.add(model);
                     
-                    // Setup animations
+                    // Setup animations but don't auto-play rotation
                     if (gltf.animations && gltf.animations.length > 0) {
                         mixer = new THREE.AnimationMixer(model);
+                        // Only play built-in animations, not rotation
                         const action = mixer.clipAction(gltf.animations[0]);
                         action.play();
                     }
@@ -581,11 +583,11 @@
                 mixer.update(0.016);
             }
             
-            // Gentle idle animation
-            if (model) {
-                model.rotation.y += 0.002;
-                model.position.y += Math.sin(Date.now() * 0.001) * 0.002;
-            }
+            // Remove the automatic rotation - let her stay still
+            // if (model) {
+            //     model.rotation.y += 0.002;
+            //     model.position.y += Math.sin(Date.now() * 0.001) * 0.002;
+            // }
             
             renderer.render(scene, camera);
         }
