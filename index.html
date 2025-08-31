@@ -378,227 +378,13 @@
     </div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.module.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
     <script>
         // Global variables
         let scene, camera, renderer, mixer, model;
         let lastAssistantMessage = '';
         let isPlaying = false;
         let isChatCollapsed = false;
-
-        // Three.js GLTFLoader
-        const GLTFLoader = (() => {
-            'use strict';
-
-            const _taskCache = new WeakMap();
-
-            class GLTFLoader extends THREE.Loader {
-                constructor(manager) {
-                    super(manager);
-                    this.dracoLoader = null;
-                    this.ktx2Loader = null;
-                    this.meshoptDecoder = null;
-                    this.pluginCallbacks = [];
-                    this.register(function(parser) {
-                        return new GLTFMaterialsClearcoatExtension(parser);
-                    });
-                }
-
-                load(url, onLoad, onProgress, onError) {
-                    const scope = this;
-                    let resourcePath;
-
-                    if (this.resourcePath !== '') {
-                        resourcePath = this.resourcePath;
-                    } else if (this.path !== '') {
-                        resourcePath = this.path;
-                    } else {
-                        resourcePath = THREE.LoaderUtils.extractUrlBase(url);
-                    }
-
-                    this.manager.itemStart(url);
-
-                    const _onError = function(e) {
-                        if (onError) {
-                            onError(e);
-                        } else {
-                            console.error(e);
-                        }
-                        scope.manager.itemError(url);
-                        scope.manager.itemEnd(url);
-                    };
-
-                    const loader = new THREE.FileLoader(this.manager);
-                    loader.setPath(this.path);
-                    loader.setResponseType('arraybuffer');
-                    loader.setRequestHeader(this.requestHeader);
-                    loader.setWithCredentials(this.withCredentials);
-
-                    loader.load(url, function(data) {
-                        try {
-                            scope.parse(data, resourcePath, function(gltf) {
-                                onLoad(gltf);
-                                scope.manager.itemEnd(url);
-                            }, _onError);
-                        } catch (e) {
-                            _onError(e);
-                        }
-                    }, onProgress, _onError);
-                }
-
-                parse(data, path, onLoad, onError) {
-                    let content;
-                    const extensions = {};
-                    const plugins = {};
-
-                    if (typeof data === 'string') {
-                        content = data;
-                    } else {
-                        const magic = THREE.LoaderUtils.decodeText(new Uint8Array(data, 0, 4));
-                        if (magic === 'glTF') {
-                            extensions[EXTENSIONS.KHR_BINARY_GLTF] = new GLTFBinaryExtension(data);
-                            content = extensions[EXTENSIONS.KHR_BINARY_GLTF].content;
-                        } else {
-                            content = THREE.LoaderUtils.decodeText(new Uint8Array(data));
-                        }
-                    }
-
-                    const json = JSON.parse(content);
-                    if (json.asset === undefined || json.asset.version[0] < 2) {
-                        if (onError) onError(new Error('THREE.GLTFLoader: Unsupported asset. glTF versions >=2.0 are supported.'));
-                        return;
-                    }
-
-                    const parser = new GLTFParser(json, {
-                        path: path || this.resourcePath || '',
-                        crossOrigin: this.crossOrigin,
-                        requestHeader: this.requestHeader,
-                        manager: this.manager,
-                        ktx2Loader: this.ktx2Loader,
-                        meshoptDecoder: this.meshoptDecoder
-                    });
-
-                    parser.fileLoader.setRequestHeader(this.requestHeader);
-
-                    for (let i = 0; i < this.pluginCallbacks.length; i++) {
-                        const plugin = this.pluginCallbacks[i](parser);
-                        plugins[plugin.name] = plugin;
-                        extensions[plugin.name] = true;
-                    }
-
-                    parser.setExtensions(extensions);
-                    parser.setPlugins(plugins);
-                    parser.parse(onLoad, onError);
-                }
-            }
-
-            // Simplified GLTF parser - this is a basic implementation
-            class GLTFParser {
-                constructor(json, options) {
-                    this.json = json;
-                    this.options = options;
-                    this.fileLoader = new THREE.FileLoader(options.manager);
-                    this.textureLoader = new THREE.TextureLoader(options.manager);
-                }
-
-                setExtensions(extensions) {
-                    this.extensions = extensions;
-                }
-
-                setPlugins(plugins) {
-                    this.plugins = plugins;
-                }
-
-                parse(onLoad, onError) {
-                    const parser = this;
-                    const json = this.json;
-
-                    Promise.resolve().then(function() {
-                        return parser._invokeAll(function(ext) {
-                            return ext._markDefs && ext._markDefs();
-                        });
-                    }).then(function() {
-                        return parser.loadScene();
-                    }).then(function(scene) {
-                        onLoad({
-                            scene: scene,
-                            scenes: [scene],
-                            animations: [],
-                            cameras: [],
-                            asset: json.asset
-                        });
-                    }).catch(onError);
-                }
-
-                loadScene() {
-                    const group = new THREE.Group();
-                    group.name = 'Scene';
-                    
-                    // Create a simple placeholder geometry
-                    const geometry = new THREE.SphereGeometry(1, 32, 32);
-                    const material = new THREE.MeshPhongMaterial({ color: 0x60a5fa });
-                    const mesh = new THREE.Mesh(geometry, material);
-                    group.add(mesh);
-                    
-                    return Promise.resolve(group);
-                }
-
-                _invokeAll(func) {
-                    return Promise.resolve();
-                }
-            }
-
-            const EXTENSIONS = {
-                KHR_BINARY_GLTF: 'KHR_binary_glTF'
-            };
-
-            class GLTFBinaryExtension {
-                constructor(data) {
-                    this.name = EXTENSIONS.KHR_BINARY_GLTF;
-                    this.content = null;
-                    this.body = null;
-                    
-                    const headerView = new DataView(data, 0, 12);
-                    const header = {
-                        magic: headerView.getUint32(0, true),
-                        version: headerView.getUint32(4, true),
-                        length: headerView.getUint32(8, true)
-                    };
-
-                    const chunkView = new DataView(data, 12);
-                    let chunkIndex = 0;
-
-                    while (chunkIndex < chunkView.byteLength) {
-                        const chunkLength = chunkView.getUint32(chunkIndex, true);
-                        chunkIndex += 4;
-                        const chunkType = chunkView.getUint32(chunkIndex, true);
-                        chunkIndex += 4;
-
-                        if (chunkType === 0x4E4F534A) {
-                            const contentArray = new Uint8Array(data, 12 + chunkIndex, chunkLength);
-                            this.content = THREE.LoaderUtils.decodeText(contentArray);
-                        } else if (chunkType === 0x004E4942) {
-                            const byteOffset = 12 + chunkIndex;
-                            this.body = data.slice(byteOffset, byteOffset + chunkLength);
-                        }
-
-                        chunkIndex += chunkLength;
-                    }
-                }
-            }
-
-            class GLTFMaterialsClearcoatExtension {
-                constructor(parser) {
-                    this.parser = parser;
-                    this.name = 'KHR_materials_clearcoat';
-                }
-            }
-
-            return GLTFLoader;
-        })();
-
-        // Make GLTFLoader available globally
-        THREE.GLTFLoader = GLTFLoader;
 
         // Initialize Three.js scene
         function initThreeJS() {
@@ -792,6 +578,9 @@
             
             if (!message) return;
             
+            // Check if this is localhost/development
+            const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+            
             addMessage(message, true);
             input.value = '';
             
@@ -803,30 +592,37 @@
             updateStatus('Thinking...');
             
             try {
-                // Try to get API key from environment or fallback
-                const apiKey = process?.env?.OPENROUTER_API_KEY || 'YOUR_OPENROUTER_API_KEY';
+                let response;
                 
-                const response = await fetch('/api/chat', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({ message })
-                });
-                
-                if (!response.ok) {
-                    throw new Error(`API Error: ${response.status}`);
+                if (isDev) {
+                    // For development - show demo response
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                    addMessage("Hello! I'm Esta, your AI nurse. In production, I'll be able to provide personalized health guidance. Please make sure to configure your API keys in the Vercel environment variables for full functionality.");
+                } else {
+                    // For production - use API route
+                    response = await fetch('/api/chat', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({ message })
+                    });
+                    
+                    if (!response.ok) {
+                        throw new Error(`API Error: ${response.status}`);
+                    }
+                    
+                    const data = await response.json();
+                    addMessage(data.response);
                 }
                 
-                const data = await response.json();
-                addMessage(data.response);
                 updateStatus('Ready to help');
                 
             } catch (error) {
                 console.error('Error:', error);
-                addMessage("I apologize, but I'm having trouble connecting right now. Please try again in a moment.");
-                showError('Connection error. Please check your internet connection.');
-                updateStatus('Connection error');
+                addMessage("I apologize, but I'm having trouble connecting right now. Please make sure your API keys are configured in Vercel environment variables.");
+                showError('Please configure API keys in Vercel dashboard');
+                updateStatus('Configuration needed');
             } finally {
                 sendBtn.disabled = false;
                 sendBtnText.textContent = 'Send';
@@ -837,6 +633,9 @@
             if (!lastAssistantMessage) return;
             if (isPlaying) return;
             
+            // Check if this is localhost/development
+            const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+            
             const speakBtn = document.getElementById('speakBtn');
             const speakBtnText = document.getElementById('speakBtnText');
             
@@ -846,41 +645,66 @@
             updateStatus('Speaking...');
             
             try {
-                const response = await fetch('/api/tts', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({ 
-                        text: lastAssistantMessage 
-                    })
-                });
-                
-                if (!response.ok) {
-                    throw new Error(`TTS API Error: ${response.status}`);
+                if (isDev) {
+                    // For development - use browser speech synthesis
+                    const utterance = new SpeechSynthesisUtterance(lastAssistantMessage);
+                    utterance.rate = 0.9;
+                    utterance.pitch = 1.1;
+                    utterance.volume = 0.8;
+                    
+                    utterance.onend = () => {
+                        isPlaying = false;
+                        speakBtn.disabled = false;
+                        speakBtnText.textContent = '🔊';
+                        updateStatus('Ready to help');
+                    };
+                    
+                    utterance.onerror = () => {
+                        isPlaying = false;
+                        speakBtn.disabled = false;
+                        speakBtnText.textContent = '🔊';
+                        updateStatus('Speech error');
+                    };
+                    
+                    speechSynthesis.speak(utterance);
+                } else {
+                    // For production - use ElevenLabs API
+                    const response = await fetch('/api/tts', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({ 
+                            text: lastAssistantMessage 
+                        })
+                    });
+                    
+                    if (!response.ok) {
+                        throw new Error(`TTS API Error: ${response.status}`);
+                    }
+                    
+                    const audioBlob = await response.blob();
+                    const audioUrl = URL.createObjectURL(audioBlob);
+                    const audio = new Audio(audioUrl);
+                    
+                    audio.onended = () => {
+                        isPlaying = false;
+                        speakBtn.disabled = false;
+                        speakBtnText.textContent = '🔊';
+                        updateStatus('Ready to help');
+                        URL.revokeObjectURL(audioUrl);
+                    };
+                    
+                    audio.onerror = () => {
+                        isPlaying = false;
+                        speakBtn.disabled = false;
+                        speakBtnText.textContent = '🔊';
+                        updateStatus('Speech error');
+                        URL.revokeObjectURL(audioUrl);
+                    };
+                    
+                    audio.play();
                 }
-                
-                const audioBlob = await response.blob();
-                const audioUrl = URL.createObjectURL(audioBlob);
-                const audio = new Audio(audioUrl);
-                
-                audio.onended = () => {
-                    isPlaying = false;
-                    speakBtn.disabled = false;
-                    speakBtnText.textContent = '🔊';
-                    updateStatus('Ready to help');
-                    URL.revokeObjectURL(audioUrl);
-                };
-                
-                audio.onerror = () => {
-                    isPlaying = false;
-                    speakBtn.disabled = false;
-                    speakBtnText.textContent = '🔊';
-                    updateStatus('Speech error');
-                    URL.revokeObjectURL(audioUrl);
-                };
-                
-                audio.play();
                 
             } catch (error) {
                 console.error('TTS Error:', error);
@@ -888,7 +712,7 @@
                 speakBtn.disabled = false;
                 speakBtnText.textContent = '🔊';
                 updateStatus('Speech unavailable');
-                showError('Speech synthesis failed. Please try again.');
+                showError('Speech synthesis failed. Please configure ElevenLabs API key.');
             }
         }
 
