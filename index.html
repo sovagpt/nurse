@@ -1,0 +1,915 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Nurse Assistant</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            overflow: hidden;
+            height: 100vh;
+            background: #1a1a2e;
+        }
+
+        #model-container {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            z-index: 1;
+        }
+
+        .chat-overlay {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            z-index: 10;
+            background: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(15px);
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            transition: all 0.3s ease;
+        }
+
+        .chat-header {
+            padding: 15px 20px;
+            text-align: center;
+            background: rgba(79, 70, 229, 0.9);
+            color: white;
+            cursor: pointer;
+            user-select: none;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .chat-header h2 {
+            font-size: 1.2rem;
+            font-weight: 600;
+        }
+
+        .chat-toggle {
+            background: none;
+            border: none;
+            color: white;
+            font-size: 1.5rem;
+            cursor: pointer;
+            transition: transform 0.3s ease;
+        }
+
+        .chat-content {
+            max-height: 60vh;
+            transition: max-height 0.3s ease;
+            overflow: hidden;
+        }
+
+        .chat-overlay.collapsed .chat-content {
+            max-height: 0;
+        }
+
+        .chat-overlay.collapsed .chat-toggle {
+            transform: rotate(180deg);
+        }
+
+        .messages {
+            max-height: 40vh;
+            overflow-y: auto;
+            padding: 20px;
+            background: rgba(255, 255, 255, 0.95);
+        }
+
+        .message {
+            margin-bottom: 15px;
+            animation: slideUp 0.3s ease-out;
+        }
+
+        @keyframes slideUp {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .message.user {
+            text-align: right;
+        }
+
+        .message.assistant {
+            text-align: left;
+        }
+
+        .message-content {
+            display: inline-block;
+            padding: 12px 18px;
+            border-radius: 20px;
+            max-width: 80%;
+            word-wrap: break-word;
+            font-size: 0.95rem;
+            line-height: 1.4;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        .message.user .message-content {
+            background: linear-gradient(135deg, #4f46e5, #7c3aed);
+            color: white;
+        }
+
+        .message.assistant .message-content {
+            background: white;
+            color: #1e293b;
+            border: 1px solid #e2e8f0;
+        }
+
+        .input-container {
+            padding: 20px;
+            background: rgba(255, 255, 255, 0.95);
+            display: flex;
+            gap: 12px;
+            align-items: flex-end;
+        }
+
+        #messageInput {
+            flex: 1;
+            padding: 12px 18px;
+            border: 2px solid #e2e8f0;
+            border-radius: 25px;
+            font-size: 1rem;
+            outline: none;
+            transition: all 0.3s ease;
+            resize: none;
+            min-height: 45px;
+            max-height: 100px;
+            background: white;
+        }
+
+        #messageInput:focus {
+            border-color: #4f46e5;
+            box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+        }
+
+        .action-btn {
+            padding: 12px 20px;
+            border: none;
+            border-radius: 25px;
+            font-size: 0.95rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            min-width: 80px;
+            justify-content: center;
+        }
+
+        .send-btn {
+            background: linear-gradient(135deg, #4f46e5, #7c3aed);
+            color: white;
+        }
+
+        .send-btn:hover:not(:disabled) {
+            transform: translateY(-1px);
+            box-shadow: 0 6px 20px rgba(79, 70, 229, 0.4);
+        }
+
+        .speak-btn {
+            background: linear-gradient(135deg, #059669, #047857);
+            color: white;
+        }
+
+        .speak-btn:hover:not(:disabled) {
+            transform: translateY(-1px);
+            box-shadow: 0 6px 20px rgba(5, 150, 105, 0.4);
+        }
+
+        .action-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .loading {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top-color: white;
+            animation: spin 1s ease-in-out infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .nurse-info {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            background: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 15px 20px;
+            border-radius: 15px;
+            backdrop-filter: blur(10px);
+            z-index: 5;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .nurse-info h3 {
+            font-size: 1.1rem;
+            margin-bottom: 5px;
+            color: #60a5fa;
+        }
+
+        .nurse-info p {
+            font-size: 0.9rem;
+            opacity: 0.9;
+        }
+
+        .status-indicator {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 10px 15px;
+            border-radius: 10px;
+            backdrop-filter: blur(10px);
+            z-index: 5;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            font-size: 0.85rem;
+        }
+
+        .status-dot {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            margin-right: 8px;
+            background: #10b981;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .error-message {
+            background: rgba(239, 68, 68, 0.9);
+            color: white;
+            padding: 10px 15px;
+            margin: 10px 20px;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            animation: slideDown 0.3s ease-out;
+        }
+
+        @keyframes slideDown {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        /* Mobile optimizations */
+        @media (max-width: 768px) {
+            .nurse-info, .status-indicator {
+                position: relative;
+                top: auto;
+                left: auto;
+                right: auto;
+                margin: 10px;
+                display: inline-block;
+            }
+
+            .mobile-info {
+                position: fixed;
+                top: 10px;
+                left: 10px;
+                right: 10px;
+                display: flex;
+                justify-content: space-between;
+                z-index: 5;
+            }
+
+            .chat-content {
+                max-height: 70vh;
+            }
+
+            .messages {
+                max-height: 50vh;
+            }
+
+            .message-content {
+                max-width: 90%;
+                font-size: 0.9rem;
+            }
+
+            .input-container {
+                flex-direction: column;
+                gap: 10px;
+            }
+
+            .action-btn {
+                width: 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="model-container"></div>
+    
+    <div class="nurse-info">
+        <h3>AI Nurse Esta</h3>
+        <p>Your caring virtual healthcare companion</p>
+    </div>
+    
+    <div class="status-indicator">
+        <span class="status-dot"></span>
+        <span id="statusText">Ready to help</span>
+    </div>
+    
+    <div class="chat-overlay" id="chatOverlay">
+        <div class="chat-header" onclick="toggleChat()">
+            <h2>Chat with Nurse Esta</h2>
+            <button class="chat-toggle" id="chatToggle">⌄</button>
+        </div>
+        
+        <div class="chat-content">
+            <div class="messages" id="messages">
+                <div class="message assistant">
+                    <div class="message-content">
+                        Hello! I'm Esta, your AI nurse assistant. I'm here to provide health guidance and support. Please remember that I'm not a replacement for professional medical care. How can I help you today?
+                    </div>
+                </div>
+            </div>
+            
+            <div class="input-container">
+                <textarea 
+                    id="messageInput" 
+                    placeholder="Ask me about your health concerns..."
+                    rows="1"
+                ></textarea>
+                <button class="action-btn send-btn" id="sendBtn" onclick="sendMessage()">
+                    <span id="sendBtnText">Send</span>
+                </button>
+                <button class="action-btn speak-btn" id="speakBtn" onclick="speakLastMessage()" disabled>
+                    <span id="speakBtnText">🔊</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.module.js"></script>
+    <script>
+        // Global variables
+        let scene, camera, renderer, mixer, model;
+        let lastAssistantMessage = '';
+        let isPlaying = false;
+        let isChatCollapsed = false;
+
+        // Three.js GLTFLoader
+        const GLTFLoader = (() => {
+            'use strict';
+
+            const _taskCache = new WeakMap();
+
+            class GLTFLoader extends THREE.Loader {
+                constructor(manager) {
+                    super(manager);
+                    this.dracoLoader = null;
+                    this.ktx2Loader = null;
+                    this.meshoptDecoder = null;
+                    this.pluginCallbacks = [];
+                    this.register(function(parser) {
+                        return new GLTFMaterialsClearcoatExtension(parser);
+                    });
+                }
+
+                load(url, onLoad, onProgress, onError) {
+                    const scope = this;
+                    let resourcePath;
+
+                    if (this.resourcePath !== '') {
+                        resourcePath = this.resourcePath;
+                    } else if (this.path !== '') {
+                        resourcePath = this.path;
+                    } else {
+                        resourcePath = THREE.LoaderUtils.extractUrlBase(url);
+                    }
+
+                    this.manager.itemStart(url);
+
+                    const _onError = function(e) {
+                        if (onError) {
+                            onError(e);
+                        } else {
+                            console.error(e);
+                        }
+                        scope.manager.itemError(url);
+                        scope.manager.itemEnd(url);
+                    };
+
+                    const loader = new THREE.FileLoader(this.manager);
+                    loader.setPath(this.path);
+                    loader.setResponseType('arraybuffer');
+                    loader.setRequestHeader(this.requestHeader);
+                    loader.setWithCredentials(this.withCredentials);
+
+                    loader.load(url, function(data) {
+                        try {
+                            scope.parse(data, resourcePath, function(gltf) {
+                                onLoad(gltf);
+                                scope.manager.itemEnd(url);
+                            }, _onError);
+                        } catch (e) {
+                            _onError(e);
+                        }
+                    }, onProgress, _onError);
+                }
+
+                parse(data, path, onLoad, onError) {
+                    let content;
+                    const extensions = {};
+                    const plugins = {};
+
+                    if (typeof data === 'string') {
+                        content = data;
+                    } else {
+                        const magic = THREE.LoaderUtils.decodeText(new Uint8Array(data, 0, 4));
+                        if (magic === 'glTF') {
+                            extensions[EXTENSIONS.KHR_BINARY_GLTF] = new GLTFBinaryExtension(data);
+                            content = extensions[EXTENSIONS.KHR_BINARY_GLTF].content;
+                        } else {
+                            content = THREE.LoaderUtils.decodeText(new Uint8Array(data));
+                        }
+                    }
+
+                    const json = JSON.parse(content);
+                    if (json.asset === undefined || json.asset.version[0] < 2) {
+                        if (onError) onError(new Error('THREE.GLTFLoader: Unsupported asset. glTF versions >=2.0 are supported.'));
+                        return;
+                    }
+
+                    const parser = new GLTFParser(json, {
+                        path: path || this.resourcePath || '',
+                        crossOrigin: this.crossOrigin,
+                        requestHeader: this.requestHeader,
+                        manager: this.manager,
+                        ktx2Loader: this.ktx2Loader,
+                        meshoptDecoder: this.meshoptDecoder
+                    });
+
+                    parser.fileLoader.setRequestHeader(this.requestHeader);
+
+                    for (let i = 0; i < this.pluginCallbacks.length; i++) {
+                        const plugin = this.pluginCallbacks[i](parser);
+                        plugins[plugin.name] = plugin;
+                        extensions[plugin.name] = true;
+                    }
+
+                    parser.setExtensions(extensions);
+                    parser.setPlugins(plugins);
+                    parser.parse(onLoad, onError);
+                }
+            }
+
+            // Simplified GLTF parser - this is a basic implementation
+            class GLTFParser {
+                constructor(json, options) {
+                    this.json = json;
+                    this.options = options;
+                    this.fileLoader = new THREE.FileLoader(options.manager);
+                    this.textureLoader = new THREE.TextureLoader(options.manager);
+                }
+
+                setExtensions(extensions) {
+                    this.extensions = extensions;
+                }
+
+                setPlugins(plugins) {
+                    this.plugins = plugins;
+                }
+
+                parse(onLoad, onError) {
+                    const parser = this;
+                    const json = this.json;
+
+                    Promise.resolve().then(function() {
+                        return parser._invokeAll(function(ext) {
+                            return ext._markDefs && ext._markDefs();
+                        });
+                    }).then(function() {
+                        return parser.loadScene();
+                    }).then(function(scene) {
+                        onLoad({
+                            scene: scene,
+                            scenes: [scene],
+                            animations: [],
+                            cameras: [],
+                            asset: json.asset
+                        });
+                    }).catch(onError);
+                }
+
+                loadScene() {
+                    const group = new THREE.Group();
+                    group.name = 'Scene';
+                    
+                    // Create a simple placeholder geometry
+                    const geometry = new THREE.SphereGeometry(1, 32, 32);
+                    const material = new THREE.MeshPhongMaterial({ color: 0x60a5fa });
+                    const mesh = new THREE.Mesh(geometry, material);
+                    group.add(mesh);
+                    
+                    return Promise.resolve(group);
+                }
+
+                _invokeAll(func) {
+                    return Promise.resolve();
+                }
+            }
+
+            const EXTENSIONS = {
+                KHR_BINARY_GLTF: 'KHR_binary_glTF'
+            };
+
+            class GLTFBinaryExtension {
+                constructor(data) {
+                    this.name = EXTENSIONS.KHR_BINARY_GLTF;
+                    this.content = null;
+                    this.body = null;
+                    
+                    const headerView = new DataView(data, 0, 12);
+                    const header = {
+                        magic: headerView.getUint32(0, true),
+                        version: headerView.getUint32(4, true),
+                        length: headerView.getUint32(8, true)
+                    };
+
+                    const chunkView = new DataView(data, 12);
+                    let chunkIndex = 0;
+
+                    while (chunkIndex < chunkView.byteLength) {
+                        const chunkLength = chunkView.getUint32(chunkIndex, true);
+                        chunkIndex += 4;
+                        const chunkType = chunkView.getUint32(chunkIndex, true);
+                        chunkIndex += 4;
+
+                        if (chunkType === 0x4E4F534A) {
+                            const contentArray = new Uint8Array(data, 12 + chunkIndex, chunkLength);
+                            this.content = THREE.LoaderUtils.decodeText(contentArray);
+                        } else if (chunkType === 0x004E4942) {
+                            const byteOffset = 12 + chunkIndex;
+                            this.body = data.slice(byteOffset, byteOffset + chunkLength);
+                        }
+
+                        chunkIndex += chunkLength;
+                    }
+                }
+            }
+
+            class GLTFMaterialsClearcoatExtension {
+                constructor(parser) {
+                    this.parser = parser;
+                    this.name = 'KHR_materials_clearcoat';
+                }
+            }
+
+            return GLTFLoader;
+        })();
+
+        // Make GLTFLoader available globally
+        THREE.GLTFLoader = GLTFLoader;
+
+        // Initialize Three.js scene
+        function initThreeJS() {
+            const container = document.getElementById('model-container');
+            
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x1a1a2e);
+            
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(0, 1.6, 4);
+            
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            renderer.toneMapping = THREE.ACESFilmicToneMapping;
+            renderer.toneMappingExposure = 1;
+            container.appendChild(renderer.domElement);
+            
+            // Enhanced lighting setup
+            const ambientLight = new THREE.AmbientLight(0x404040, 0.4);
+            scene.add(ambientLight);
+            
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
+            directionalLight.position.set(10, 10, 5);
+            directionalLight.castShadow = true;
+            directionalLight.shadow.mapSize.width = 2048;
+            directionalLight.shadow.mapSize.height = 2048;
+            scene.add(directionalLight);
+
+            const spotLight = new THREE.SpotLight(0x60a5fa, 0.5);
+            spotLight.position.set(-10, 10, 10);
+            spotLight.angle = Math.PI / 6;
+            scene.add(spotLight);
+            
+            // Load the nurse model
+            loadModel();
+            
+            window.addEventListener('resize', onWindowResize);
+            animate();
+        }
+
+        function loadModel() {
+            updateStatus('Loading model...');
+            const loader = new THREE.GLTFLoader();
+            
+            loader.load(
+                'https://github.com/sovagpt/nurse/raw/main/esta_nurse.glb',
+                (gltf) => {
+                    model = gltf.scene;
+                    
+                    // Scale and position the model
+                    model.scale.setScalar(2);
+                    model.position.set(0, -1, 0);
+                    
+                    // Enhance materials
+                    model.traverse((child) => {
+                        if (child.isMesh) {
+                            child.castShadow = true;
+                            child.receiveShadow = true;
+                            if (child.material) {
+                                child.material.envMapIntensity = 1;
+                            }
+                        }
+                    });
+                    
+                    scene.add(model);
+                    
+                    // Setup animations
+                    if (gltf.animations && gltf.animations.length > 0) {
+                        mixer = new THREE.AnimationMixer(model);
+                        const action = mixer.clipAction(gltf.animations[0]);
+                        action.play();
+                    }
+                    
+                    updateStatus('Ready to help');
+                },
+                (progress) => {
+                    const percent = Math.round((progress.loaded / progress.total) * 100);
+                    updateStatus(`Loading... ${percent}%`);
+                },
+                (error) => {
+                    console.error('Model loading error:', error);
+                    updateStatus('Model load failed');
+                    showError('Failed to load the nurse model. Please check your connection.');
+                    
+                    // Create fallback model
+                    createFallbackModel();
+                }
+            );
+        }
+
+        function createFallbackModel() {
+            // Create a simple fallback representation
+            const group = new THREE.Group();
+            
+            // Body
+            const bodyGeometry = new THREE.CylinderGeometry(0.5, 0.7, 2);
+            const bodyMaterial = new THREE.MeshPhongMaterial({ color: 0x60a5fa });
+            const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
+            body.position.y = 1;
+            group.add(body);
+            
+            // Head
+            const headGeometry = new THREE.SphereGeometry(0.4);
+            const headMaterial = new THREE.MeshPhongMaterial({ color: 0xffdbac });
+            const head = new THREE.Mesh(headGeometry, headMaterial);
+            head.position.y = 2.2;
+            group.add(head);
+            
+            group.scale.setScalar(1.5);
+            group.position.set(0, -0.5, 0);
+            scene.add(group);
+            model = group;
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            if (mixer) {
+                mixer.update(0.016);
+            }
+            
+            // Gentle idle animation
+            if (model) {
+                model.rotation.y += 0.002;
+                model.position.y += Math.sin(Date.now() * 0.001) * 0.002;
+            }
+            
+            renderer.render(scene, camera);
+        }
+
+        // Chat functions
+        function toggleChat() {
+            const chatOverlay = document.getElementById('chatOverlay');
+            const chatToggle = document.getElementById('chatToggle');
+            
+            isChatCollapsed = !isChatCollapsed;
+            chatOverlay.classList.toggle('collapsed', isChatCollapsed);
+            chatToggle.textContent = isChatCollapsed ? '⌄' : '⌃';
+        }
+
+        function addMessage(content, isUser = false) {
+            const messagesDiv = document.getElementById('messages');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${isUser ? 'user' : 'assistant'}`;
+            
+            const contentDiv = document.createElement('div');
+            contentDiv.className = 'message-content';
+            contentDiv.textContent = content;
+            
+            messageDiv.appendChild(contentDiv);
+            messagesDiv.appendChild(messageDiv);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+            
+            if (!isUser) {
+                lastAssistantMessage = content;
+                document.getElementById('speakBtn').disabled = false;
+            }
+        }
+
+        function updateStatus(text) {
+            document.getElementById('statusText').textContent = text;
+        }
+
+        function showError(message) {
+            const errorDiv = document.createElement('div');
+            errorDiv.className = 'error-message';
+            errorDiv.textContent = message;
+            
+            const chatContent = document.querySelector('.chat-content');
+            chatContent.insertBefore(errorDiv, chatContent.firstChild);
+            
+            setTimeout(() => {
+                if (errorDiv.parentNode) {
+                    errorDiv.parentNode.removeChild(errorDiv);
+                }
+            }, 5000);
+        }
+
+        async function sendMessage() {
+            const input = document.getElementById('messageInput');
+            const message = input.value.trim();
+            
+            if (!message) return;
+            
+            addMessage(message, true);
+            input.value = '';
+            
+            const sendBtn = document.getElementById('sendBtn');
+            const sendBtnText = document.getElementById('sendBtnText');
+            sendBtn.disabled = true;
+            sendBtnText.innerHTML = '<div class="loading"></div>';
+            
+            updateStatus('Thinking...');
+            
+            try {
+                // Try to get API key from environment or fallback
+                const apiKey = process?.env?.OPENROUTER_API_KEY || 'YOUR_OPENROUTER_API_KEY';
+                
+                const response = await fetch('/api/chat', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ message })
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`API Error: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                addMessage(data.response);
+                updateStatus('Ready to help');
+                
+            } catch (error) {
+                console.error('Error:', error);
+                addMessage("I apologize, but I'm having trouble connecting right now. Please try again in a moment.");
+                showError('Connection error. Please check your internet connection.');
+                updateStatus('Connection error');
+            } finally {
+                sendBtn.disabled = false;
+                sendBtnText.textContent = 'Send';
+            }
+        }
+
+        async function speakLastMessage() {
+            if (!lastAssistantMessage) return;
+            if (isPlaying) return;
+            
+            const speakBtn = document.getElementById('speakBtn');
+            const speakBtnText = document.getElementById('speakBtnText');
+            
+            speakBtn.disabled = true;
+            speakBtnText.innerHTML = '<div class="loading"></div>';
+            isPlaying = true;
+            updateStatus('Speaking...');
+            
+            try {
+                const response = await fetch('/api/tts', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ 
+                        text: lastAssistantMessage 
+                    })
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`TTS API Error: ${response.status}`);
+                }
+                
+                const audioBlob = await response.blob();
+                const audioUrl = URL.createObjectURL(audioBlob);
+                const audio = new Audio(audioUrl);
+                
+                audio.onended = () => {
+                    isPlaying = false;
+                    speakBtn.disabled = false;
+                    speakBtnText.textContent = '🔊';
+                    updateStatus('Ready to help');
+                    URL.revokeObjectURL(audioUrl);
+                };
+                
+                audio.onerror = () => {
+                    isPlaying = false;
+                    speakBtn.disabled = false;
+                    speakBtnText.textContent = '🔊';
+                    updateStatus('Speech error');
+                    URL.revokeObjectURL(audioUrl);
+                };
+                
+                audio.play();
+                
+            } catch (error) {
+                console.error('TTS Error:', error);
+                isPlaying = false;
+                speakBtn.disabled = false;
+                speakBtnText.textContent = '🔊';
+                updateStatus('Speech unavailable');
+                showError('Speech synthesis failed. Please try again.');
+            }
+        }
+
+        // Input handling
+        document.getElementById('messageInput').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage();
+            }
+        });
+
+        // Auto-resize textarea
+        document.getElementById('messageInput').addEventListener('input', function() {
+            this.style.height = 'auto';
+            this.style.height = Math.min(this.scrollHeight, 100) + 'px';
+        });
+
+        // Initialize when page loads
+        window.addEventListener('load', () => {
+            initThreeJS();
+        });
+    </script>
+</body>
+</html>
